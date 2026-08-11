@@ -28,14 +28,23 @@ export function CollaboratorsPanel({
   onRoleChange,
 }: CollaboratorsPanelProps) {
   const online = members.filter((member) => member.online).length;
-  const [menuFor, setMenuFor] = useState<string | null>(null);
+  /**
+   * The member list is a scroll container (`overflow-y-auto`), which clips any
+   * absolutely-positioned child — so the role menu is rendered `fixed`, anchored
+   * to the badge's on-screen rect, exactly like the file tree's context menu.
+   */
+  const [menu, setMenu] = useState<{ userId: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
-    if (!menuFor) return;
-    const dismiss = () => setMenuFor(null);
+    if (!menu) return;
+    const dismiss = () => setMenu(null);
     window.addEventListener('click', dismiss);
-    return () => window.removeEventListener('click', dismiss);
-  }, [menuFor]);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      window.removeEventListener('click', dismiss);
+      window.removeEventListener('resize', dismiss);
+    };
+  }, [menu]);
 
   return (
     <section className="border-b border-line">
@@ -95,7 +104,12 @@ export function CollaboratorsPanel({
                     title="Change role"
                     onClick={(event) => {
                       event.stopPropagation();
-                      setMenuFor((current) => (current === member.userId ? null : member.userId));
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setMenu((current) =>
+                        current?.userId === member.userId
+                          ? null
+                          : { userId: member.userId, x: rect.right - 128, y: rect.bottom + 4 },
+                      );
                     }}
                     className="shrink-0"
                   >
@@ -106,36 +120,41 @@ export function CollaboratorsPanel({
                     {member.role}
                   </Badge>
                 )}
-
-                {menuFor === member.userId ? (
-                  <div
-                    role="menu"
-                    className="absolute right-2 top-[calc(100%-6px)] z-30 w-32 overflow-hidden rounded-[6px] border border-line bg-elevated py-1"
-                  >
-                    <p className="t-meta px-3 pb-1">Change role</p>
-                    {(['editor', 'viewer'] as const).map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        role="menuitem"
-                        disabled={role === member.role}
-                        onClick={() => {
-                          setMenuFor(null);
-                          onRoleChange(member.userId, role);
-                        }}
-                        className="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-secondary transition-colors hover:bg-selected hover:text-ink disabled:opacity-40"
-                      >
-                        {role}
-                        {role === member.role ? ' ✓' : ''}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
               </li>
             );
           })}
         </ul>
       )}
+
+      {menu ? (
+        <div
+          role="menu"
+          style={{ top: menu.y, left: menu.x }}
+          className="fixed z-50 w-32 overflow-hidden rounded-[6px] border border-line bg-elevated py-1"
+        >
+          <p className="t-meta px-3 pb-1">Change role</p>
+          {(['editor', 'viewer'] as const).map((role) => {
+            const current = members.find((m) => m.userId === menu.userId)?.role;
+            return (
+              <button
+                key={role}
+                type="button"
+                role="menuitem"
+                disabled={role === current}
+                onClick={() => {
+                  const target = menu.userId;
+                  setMenu(null);
+                  onRoleChange(target, role);
+                }}
+                className="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-secondary transition-colors hover:bg-selected hover:text-ink disabled:opacity-40"
+              >
+                {role}
+                {role === current ? ' ✓' : ''}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </section>
   );
 }
