@@ -1,0 +1,5 @@
+# SPA fallback: /dashboard, /room/:roomId and share links must return index.html
+# instead of 404 when the browser requests them directly (refresh, pasted link).
+# Read by Netlify and Render static sites. Other platforms need their own rule —
+# see "Frontend deployment" in README.md.
+/*  /index.html  200

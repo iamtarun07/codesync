@@ -1,0 +1,316 @@
+@import 'tailwindcss';
+
+/* Class-based theme switching (Tailwind v4 defaults to prefers-color-scheme). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   CodeSync design tokens.
+
+   HARD CONSTRAINT — no glassmorphism. Never use backdrop-filter, frosted
+   glass, translucent panels or gradient surfaces. Every surface is opaque.
+   Depth comes from the four-step surface ramp, hairline borders, spacing and
+   typography. The UI must still read as premium with all shadows removed.
+--------------------------------------------------------------------------- */
+
+:root {
+  /* Light theme — re-toned, not inverted. Borders stay the primary depth cue. */
+  --cs-bg: #f7f8fa;
+  --cs-surface: #ffffff;
+  --cs-elevated: #ffffff;
+  --cs-selected: #eef1f4;
+  --cs-border: #dde2e8;
+  --cs-border-strong: #c3cbd4;
+
+  --cs-text: #0b0d0f;
+  --cs-text-secondary: #5a636d;
+  --cs-text-muted: #8a939d;
+  --cs-text-disabled: #b4bcc4;
+
+  /* Accents darken rather than flip, so they keep contrast on white. */
+  --cs-cyan: #0e8c9e;
+  --cs-cyan-tint: #e6f7fa;
+  --cs-cyan-border: #a8dee6;
+  --cs-cyan-contrast: #ffffff;
+
+  --cs-lime: #5c8a0a;
+  --cs-lime-tint: #eff7e0;
+  --cs-lime-border: #c6de9a;
+
+  --cs-amber: #a35b00;
+  --cs-amber-tint: #fbf0da;
+  --cs-amber-border: #e8c98a;
+
+  --cs-red: #c42b2b;
+  --cs-red-tint: #fbe7e7;
+  --cs-red-border: #e9afaf;
+
+  --cs-code-selection: #cfe9ee;
+  --cs-grid-line: #e6eaef;
+}
+
+.dark {
+  /* Four-step surface ramp. */
+  --cs-bg: #0b0d0f;
+  --cs-surface: #111418;
+  --cs-elevated: #171b20;
+  --cs-selected: #1c2127;
+  --cs-border: #252b32;
+  --cs-border-strong: #39424c;
+
+  --cs-text: #f3f5f7;
+  --cs-text-secondary: #8d96a0;
+  --cs-text-muted: #5f6872;
+  --cs-text-disabled: #39424c;
+
+  /* Each accent gets one opaque tint + one border. These four pairs are the
+     only coloured surfaces in the product. */
+  --cs-cyan: #22d3ee;
+  --cs-cyan-tint: #0e2c31;
+  --cs-cyan-border: #164e56;
+  --cs-cyan-contrast: #04191c;
+
+  --cs-lime: #a3e635;
+  --cs-lime-tint: #141a0e;
+  --cs-lime-border: #2f3d18;
+
+  --cs-amber: #f0b429;
+  --cs-amber-tint: #1c1608;
+  --cs-amber-border: #4a3a12;
+
+  --cs-red: #ef4b4b;
+  --cs-red-tint: #1a1214;
+  --cs-red-border: #4a2226;
+
+  --cs-code-selection: #14383c;
+  --cs-grid-line: #10151a;
+}
+
+/* `inline` keeps the utilities pointing at the variables, so flipping the
+   .dark class re-themes everything without rebuilding. */
+@theme inline {
+  --color-bg: var(--cs-bg);
+  --color-surface: var(--cs-surface);
+  --color-elevated: var(--cs-elevated);
+  --color-selected: var(--cs-selected);
+  --color-line: var(--cs-border);
+  --color-line-strong: var(--cs-border-strong);
+
+  --color-ink: var(--cs-text);
+  --color-ink-secondary: var(--cs-text-secondary);
+  --color-ink-muted: var(--cs-text-muted);
+  --color-ink-disabled: var(--cs-text-disabled);
+
+  --color-cyan: var(--cs-cyan);
+  --color-cyan-tint: var(--cs-cyan-tint);
+  --color-cyan-line: var(--cs-cyan-border);
+  --color-cyan-contrast: var(--cs-cyan-contrast);
+
+  --color-lime: var(--cs-lime);
+  --color-lime-tint: var(--cs-lime-tint);
+  --color-lime-line: var(--cs-lime-border);
+
+  --color-amber: var(--cs-amber);
+  --color-amber-tint: var(--cs-amber-tint);
+  --color-amber-line: var(--cs-amber-border);
+
+  --color-red: var(--cs-red);
+  --color-red-tint: var(--cs-red-tint);
+  --color-red-line: var(--cs-red-border);
+
+  --font-sans: Geist, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Restrained radii: 4 chips · 6 controls · 8 panels · 10 modals. */
+  --radius-chip: 4px;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-modal: 10px;
+}
+
+/* ---- base ---------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font-family: Geist, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--cs-cyan-tint);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--cs-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--cs-border);
+  border: 2px solid var(--cs-bg);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cs-border-strong);
+}
+
+:focus-visible {
+  outline: 2px solid var(--cs-cyan);
+  outline-offset: 2px;
+}
+
+/* ---- type roles ---------------------------------------------------------- */
+
+.t-page-title {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.t-screen-title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* mono 9.5 / 0.16em / uppercase */
+.t-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cs-text-muted);
+}
+
+.t-body {
+  font-size: 13.5px;
+}
+
+.t-caption {
+  font-size: 12px;
+  color: var(--cs-text-secondary);
+}
+
+/* mono 11 / muted */
+.t-meta {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--cs-text-muted);
+}
+
+.t-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ---- motion -------------------------------------------------------------- */
+
+@keyframes csSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Connecting reads calm; reconnecting is faster so it reads as urgent. */
+@keyframes csPulse {
+  0% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes csSlideIn {
+  from {
+    transform: translateX(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.cs-spin {
+  animation: csSpin 0.7s linear infinite;
+}
+.cs-pulse-slow {
+  animation: csPulse 1.1s ease-in-out infinite;
+}
+.cs-pulse-fast {
+  animation: csPulse 0.7s ease-in-out infinite;
+}
+.cs-slide-in {
+  animation: csSlideIn 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-spin,
+  .cs-pulse-slow,
+  .cs-pulse-fast,
+  .cs-slide-in {
+    animation: none;
+  }
+}
+
+/* ---- decorative grid used on the auth screens ---------------------------- */
+
+.cs-grid {
+  background-image:
+    linear-gradient(to right, var(--cs-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--cs-grid-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+/* ---- remote cursors (rendered by y-monaco from awareness) ----------------
+   Per-client colour and name are injected at runtime by RemoteCursorStyles.
+   Selection is a solid fill of the owner's hue — never alpha, never glow. */
+
+.yRemoteSelection {
+  background-color: var(--cs-cyan-tint);
+  border-radius: 1px;
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  box-sizing: border-box;
+  height: 100%;
+  border-left: 2px solid var(--cs-cyan);
+}
+
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: '';
+  top: -14px;
+  left: -2px;
+  padding: 2px 4px;
+  border-radius: 3px 3px 3px 0;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  background-color: var(--cs-cyan);
+  color: var(--cs-cyan-contrast);
+}

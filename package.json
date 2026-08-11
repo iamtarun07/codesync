@@ -1,0 +1,25 @@
+{
+  "name": "codesync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CodeSync - real-time collaborative code editor (MERN + Socket.IO + Yjs + Monaco)",
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm:server\" \"npm:client\"",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "start": "npm --prefix server run start",
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "test": "npm --prefix server run test",
+    "lint": "eslint server/src client/src",
+    "format": "prettier --write \"{server,client}/src/**/*.{ts,tsx,css}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript-eslint": "^8.19.0"
+  }
+}

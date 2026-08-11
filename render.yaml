@@ -1,0 +1,35 @@
+# Render Blueprint — backend only.
+#
+# The backend must be a persistent Web Service, never a serverless function:
+# it owns long-lived Socket.IO connections, in-process Yjs documents per open
+# file, and presence state. Serverless would break all three.
+#
+# The frontend is deployed separately to Vercel (see client/vercel.json).
+#
+# Secrets are marked `sync: false` so Render prompts for them instead of storing
+# them in this committed file.
+services:
+  - type: web
+    name: codesync-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT; the server reads it and never hardcodes one.
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      # The deployed frontend origin (https, no trailing slash). Set after the
+      # Vercel deployment exists, then restart the service.
+      - key: CLIENT_URL
+        sync: false
+      # Arbitrary local execution is refused in production anyway; keep the Run
+      # button explicitly off until an isolated Piston sandbox is configured.
+      - key: RUNNER
+        value: disabled

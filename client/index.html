@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeSync — Real-Time Collaborative Code Editor</title>
+    <meta
+      name="description"
+      content="Collaborative code editing with live cursors, presence and chat."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    />
+    <script>
+      // Applied before first paint so the app never flashes the wrong theme.
+      // Dark is the default — this design is dark-first.
+      (function () {
+        var stored = localStorage.getItem('codesync-theme');
+        document.documentElement.classList.toggle('dark', stored !== 'light');
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
