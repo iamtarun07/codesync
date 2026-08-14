@@ -3,23 +3,32 @@ import { User } from '../models/User';
 import { ApiError } from '../utils/ApiError';
 import { AUTH_COOKIE, verifyToken } from '../utils/jwt';
 
-function extractToken(req: Request): string | null {
+/**
+ * Every place the token can arrive, cookie first.
+ *
+ * All candidates are returned rather than just the first present one: a stale
+ * cookie alongside a fresh Bearer header must not fail the request. The Bearer
+ * header is also the only channel that works when the browser blocks the
+ * cross-site auth cookie.
+ */
+function extractTokens(req: Request): string[] {
+  const candidates: string[] = [];
+
   const cookieToken = req.cookies?.[AUTH_COOKIE];
-  if (typeof cookieToken === 'string' && cookieToken.length > 0) return cookieToken;
+  if (typeof cookieToken === 'string' && cookieToken.length > 0) candidates.push(cookieToken);
 
-  // Bearer fallback keeps Postman/socket testing simple without weakening cookies.
   const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) return header.slice(7);
+  if (header?.startsWith('Bearer ')) candidates.push(header.slice(7));
 
-  return null;
+  return candidates;
 }
 
 export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    const token = extractToken(req);
-    if (!token) throw ApiError.unauthorized();
+    const tokens = extractTokens(req);
+    if (tokens.length === 0) throw ApiError.unauthorized();
 
-    const userId = verifyToken(token);
+    const userId = tokens.map(verifyToken).find((id): id is string => id !== null) ?? null;
     if (!userId)
       throw ApiError.unauthorized('Session expired, please log in again', 'TOKEN_INVALID');
 

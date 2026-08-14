@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import type { ApiFailure } from '../types';
+import { getAuthToken } from './authToken';
 import { API_URL } from './config';
 
 export const api = axios.create({
@@ -7,6 +8,15 @@ export const api = axios.create({
   // Required: the JWT lives in an httpOnly cookie.
   withCredentials: true,
   timeout: 15_000,
+});
+
+// Cookie first, Bearer second. Browsers that block the cross-site cookie send
+// nothing at all otherwise, which reads as "not logged in" on every request
+// after the login call itself. See services/authToken.ts.
+api.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
 
 /** The server's machine-readable error code, when there is one. */

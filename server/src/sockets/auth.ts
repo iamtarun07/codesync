@@ -3,18 +3,22 @@ import { User } from '../models/User';
 import { AUTH_COOKIE, verifyToken } from '../utils/jwt';
 import type { AppSocket } from '../types/socket.types';
 
-function tokenFromSocket(socket: AppSocket): string | null {
+/** Cookie first, then the explicit handshake token; a stale cookie must not
+ * shadow a valid handshake token. The handshake token is the only channel that
+ * survives a browser blocking the cross-site cookie. */
+function tokensFromSocket(socket: AppSocket): string[] {
+  const candidates: string[] = [];
+
   const header = socket.handshake.headers.cookie;
   if (header) {
-    const parsed = cookie.parse(header);
-    const fromCookie = parsed[AUTH_COOKIE];
-    if (fromCookie) return fromCookie;
+    const fromCookie = cookie.parse(header)[AUTH_COOKIE];
+    if (fromCookie) candidates.push(fromCookie);
   }
 
-  // Explicit handshake token: needed for CLI/Postman socket testing and for
-  // deployments where the cookie is cross-site.
   const authToken = socket.handshake.auth?.token;
-  return typeof authToken === 'string' && authToken.length > 0 ? authToken : null;
+  if (typeof authToken === 'string' && authToken.length > 0) candidates.push(authToken);
+
+  return candidates;
 }
 
 /**
@@ -23,10 +27,10 @@ function tokenFromSocket(socket: AppSocket): string | null {
  */
 export async function socketAuth(socket: AppSocket, next: (err?: Error) => void) {
   try {
-    const token = tokenFromSocket(socket);
-    if (!token) return next(new Error('UNAUTHENTICATED'));
+    const tokens = tokensFromSocket(socket);
+    if (tokens.length === 0) return next(new Error('UNAUTHENTICATED'));
 
-    const userId = verifyToken(token);
+    const userId = tokens.map(verifyToken).find((id): id is string => id !== null);
     if (!userId) return next(new Error('UNAUTHENTICATED'));
 
     const user = await User.findById(userId).select('username');

@@ -107,6 +107,39 @@ describe('auth', () => {
     const after = await agent.get('/api/auth/me');
     expect(after.status).toBe(401);
   });
+
+  /**
+   * The second-device bug: on a browser that blocks the cross-site auth cookie,
+   * login returns 200 but no cookie is ever sent back, so the dashboard's first
+   * request fails with UNAUTHENTICATED. Login must therefore also hand back the
+   * token, and that token alone must authenticate — no cookie involved.
+   */
+  it('authenticates with the login token alone, without any cookie', async () => {
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: userA.email, password: userA.password });
+    expect(login.status).toBe(200);
+    expect(typeof login.body.data.token).toBe('string');
+
+    // `request(app)` (not `request.agent`) keeps no cookie jar.
+    const me = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${login.body.data.token}`);
+    expect(me.status).toBe(200);
+    expect(me.body.data.user.email).toBe(userA.email);
+  });
+
+  it('accepts a valid Bearer token even when the cookie is stale', async () => {
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: userA.email, password: userA.password });
+
+    const me = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', 'codesync_token=not-a-real-jwt')
+      .set('Authorization', `Bearer ${login.body.data.token}`);
+    expect(me.status).toBe(200);
+  });
 });
 
 describe('rooms', () => {

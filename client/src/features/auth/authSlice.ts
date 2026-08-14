@@ -1,6 +1,13 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import type { AxiosError } from 'axios';
 import { api, apiErrorMessage } from '../../services/api';
+import { setAuthToken } from '../../services/authToken';
 import type { User } from '../../types';
+
+/** Login and register both return the raw JWT alongside the cookie. */
+interface SessionResponse {
+  data: { user: User; token?: string };
+}
 
 interface AuthState {
   user: User | null;
@@ -18,15 +25,24 @@ const initialState: AuthState = {
 };
 
 export const fetchMe = createAsyncThunk('auth/me', async () => {
-  const res = await api.get<{ data: { user: User } }>('/auth/me');
-  return res.data.data.user;
+  try {
+    const res = await api.get<{ data: { user: User } }>('/auth/me');
+    return res.data.data.user;
+  } catch (err) {
+    // Discard the stored token only when the server actually rejected it. A
+    // timeout or an unreachable server (free-tier cold start) must not log the
+    // user out of a session that is still valid.
+    if ((err as AxiosError)?.response?.status === 401) setAuthToken(null);
+    throw err;
+  }
 });
 
 export const login = createAsyncThunk(
   'auth/login',
   async (payload: { email: string; password: string }, { rejectWithValue }) => {
     try {
-      const res = await api.post<{ data: { user: User } }>('/auth/login', payload);
+      const res = await api.post<SessionResponse>('/auth/login', payload);
+      setAuthToken(res.data.data.token ?? null);
       return res.data.data.user;
     } catch (err) {
       return rejectWithValue(apiErrorMessage(err, 'Could not sign in'));
@@ -38,7 +54,8 @@ export const register = createAsyncThunk(
   'auth/register',
   async (payload: { username: string; email: string; password: string }, { rejectWithValue }) => {
     try {
-      const res = await api.post<{ data: { user: User } }>('/auth/register', payload);
+      const res = await api.post<SessionResponse>('/auth/register', payload);
+      setAuthToken(res.data.data.token ?? null);
       return res.data.data.user;
     } catch (err) {
       return rejectWithValue(apiErrorMessage(err, 'Could not create the account'));
@@ -47,7 +64,13 @@ export const register = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk('auth/logout', async () => {
-  await api.post('/auth/logout');
+  try {
+    await api.post('/auth/logout');
+  } finally {
+    // Drop the local token even if the request failed, or the app would keep
+    // authenticating with it after the cookie is gone.
+    setAuthToken(null);
+  }
 });
 
 function startSubmit(state: AuthState) {

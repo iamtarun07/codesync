@@ -1,4 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
+import { getAuthToken } from './authToken';
 import { SOCKET_URL } from './config';
 import type {
   ActivityEntry,
@@ -75,6 +76,10 @@ export function getSocket(): AppSocket {
   if (!socket) {
     socket = io(SOCKET_URL, {
       withCredentials: true,
+      // Callback form, not a static object: the socket is created before login,
+      // and this re-reads the token on every (re)connect. The handshake cookie
+      // is still preferred server-side; this covers browsers that drop it.
+      auth: (cb) => cb({ token: getAuthToken() ?? undefined }),
       autoConnect: false,
       transports: ['websocket', 'polling'],
       reconnectionDelay: 500,
