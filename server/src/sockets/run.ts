@@ -76,6 +76,9 @@ export function registerRunHandlers(io: AppServer, socket: AppSocket): void {
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,
+        status: result.status ?? null,
+        cpuTimeMs: result.cpuTimeMs ?? null,
+        memoryKb: result.memoryKb ?? null,
         durationMs: Date.now() - startedAt,
         ranAt: new Date().toISOString(),
       });

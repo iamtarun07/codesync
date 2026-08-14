@@ -95,6 +95,12 @@ export interface RunOutput {
   stdout: string;
   stderr: string;
   exitCode: number | null;
+  /** Sandbox verdict, e.g. "Accepted" / "Compilation Error" / "Time Limit Exceeded". */
+  status: string | null;
+  /** CPU time and peak memory as measured by the sandbox, when it reports them. */
+  cpuTimeMs: number | null;
+  memoryKb: number | null;
+  /** Wall-clock time measured by the backend, including transport. */
   durationMs: number;
   ranAt: string;
 }

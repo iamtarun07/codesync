@@ -21,6 +21,7 @@ const RUNTIMES: Record<string, { language: string; version: string; file: string
   typescript: { language: 'typescript', version: '*', file: 'main.ts' },
   python: { language: 'python', version: '*', file: 'main.py' },
   java: { language: 'java', version: '*', file: 'Main.java' },
+  c: { language: 'c', version: '*', file: 'main.c' },
   cpp: { language: 'c++', version: '*', file: 'main.cpp' },
 };
 

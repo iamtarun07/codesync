@@ -21,11 +21,19 @@ const envSchema = z
      */
     TEST_MONGODB_URI: z.string().optional(),
     // Code execution backend.
-    //   local    – spawn a child process on this host (dev machines only)
+    //   judge0   – POST to a Judge0 sandbox at JUDGE0_URL (production default)
     //   piston   – POST to a Piston sandbox at PISTON_URL
+    //   local    – spawn a child process on this host (dev machines only)
     //   disabled – the Run button reports that execution is off
-    RUNNER: z.enum(['local', 'piston', 'disabled']).default('local'),
+    RUNNER: z.enum(['local', 'piston', 'judge0', 'disabled']).default('local'),
     PISTON_URL: z.string().url().default('https://emkc.org/api/v2/piston'),
+    /** Judge0 instance. The public CE instance needs no key. */
+    JUDGE0_URL: z.string().url().default('https://ce.judge0.com'),
+    /** Self-hosted Judge0 with authn enabled (sent as X-Auth-Token). */
+    JUDGE0_TOKEN: z.string().optional(),
+    /** RapidAPI-hosted Judge0 — both must be set together. */
+    JUDGE0_RAPIDAPI_KEY: z.string().optional(),
+    JUDGE0_RAPIDAPI_HOST: z.string().optional(),
   })
   /**
    * Production must never inherit a development default. A deployed server that
@@ -56,6 +64,12 @@ const envSchema = z
     }
     if (value.RUNNER === 'piston' && LOCAL_HOST_PATTERN.test(value.PISTON_URL)) {
       require('PISTON_URL', 'must be reachable from the deployed server');
+    }
+    if (value.RUNNER === 'judge0' && LOCAL_HOST_PATTERN.test(value.JUDGE0_URL)) {
+      require('JUDGE0_URL', 'must be reachable from the deployed server');
+    }
+    if (Boolean(value.JUDGE0_RAPIDAPI_KEY) !== Boolean(value.JUDGE0_RAPIDAPI_HOST)) {
+      require('JUDGE0_RAPIDAPI_HOST', 'set both JUDGE0_RAPIDAPI_KEY and JUDGE0_RAPIDAPI_HOST, or neither');
     }
   });
 

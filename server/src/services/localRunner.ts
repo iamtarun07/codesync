@@ -51,6 +51,15 @@ const RUNTIMES: Record<string, LocalRuntime> = {
     run: { commands: ['java'], args: (file) => [file] },
     requirement: 'JDK 11+ (`java` on PATH)',
   },
+  c: {
+    file: 'main.c',
+    compile: {
+      commands: ['gcc', 'cc', 'clang'],
+      args: (file, dir) => [file, '-O1', '-std=c17', '-o', path.join(dir, `prog${binarySuffix}`)],
+    },
+    run: { commands: [], args: () => [] },
+    requirement: 'A C compiler (`gcc`, `cc` or `clang` on PATH)',
+  },
   cpp: {
     file: 'main.cpp',
     compile: {
