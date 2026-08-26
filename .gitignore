@@ -19,3 +19,6 @@ Thumbs.db
 
 # Deployment platform link metadata
 .vercel/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
