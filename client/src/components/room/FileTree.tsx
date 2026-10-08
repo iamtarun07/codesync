@@ -79,6 +79,9 @@ export function FileTree({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Draft>(null);
   const [menu, setMenu] = useState<{ file: RoomFile; x: number; y: number } | null>(null);
+  // Last clicked entry, like VS Code's explorer focus. '' = workspace root,
+  // null = nothing clicked yet (fall back to the open file).
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const rows = useMemo(() => flatten(buildTree(files), collapsed), [files, collapsed]);
@@ -114,6 +117,14 @@ export function FileTree({
 
     if (draft.mode === 'create') {
       const path = draft.parentPath ? `${draft.parentPath}/${trimmed}` : trimmed;
+      // Expand the target folder so the new entry is visible.
+      if (draft.parentPath) {
+        setCollapsed((prev) => {
+          const next = new Set(prev);
+          next.delete(draft.parentPath);
+          return next;
+        });
+      }
       onCreate(path, draft.type);
     } else {
       onRename(draft.fileId, trimmed);
@@ -127,9 +138,14 @@ export function FileTree({
 
   /** New entries land next to whatever is selected, like an IDE does it. */
   const draftParent = () => {
-    const active = files.find((file) => file.fileId === activeFileId);
-    if (!active) return '';
-    return active.type === 'folder' ? active.path : active.path.split('/').slice(0, -1).join('/');
+    if (selectedPath === '') return '';
+    const selected =
+      files.find((file) => file.path === selectedPath) ??
+      files.find((file) => file.fileId === activeFileId);
+    if (!selected) return '';
+    return selected.type === 'folder'
+      ? selected.path
+      : selected.path.split('/').slice(0, -1).join('/');
   };
 
   return (
@@ -173,9 +189,16 @@ export function FileTree({
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto pb-2"
+        // Clicking empty space targets the workspace root, as in VS Code.
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setSelectedPath('');
+        }}
+      >
         {rows.map(({ file, depth }) => {
           const isActive = file.fileId === activeFileId;
+          const isSelectedFolder = file.type === 'folder' && file.path === selectedPath;
           const isRenaming = draft?.mode === 'rename' && draft.fileId === file.fileId;
 
           return (
@@ -193,7 +216,11 @@ export function FileTree({
               ) : (
                 <button
                   type="button"
-                  onClick={() => (file.type === 'folder' ? toggle(file.path) : onOpen(file.fileId))}
+                  onClick={() => {
+                    setSelectedPath(file.path);
+                    if (file.type === 'folder') toggle(file.path);
+                    else onOpen(file.fileId);
+                  }}
                   onContextMenu={(event) => {
                     if (!canEdit) return;
                     event.preventDefault();
@@ -203,7 +230,9 @@ export function FileTree({
                   className={`flex w-full items-center gap-1.5 border-l-2 py-[3px] pr-2 text-left transition-colors ${
                     isActive
                       ? 'border-cyan bg-selected'
-                      : 'border-transparent hover:bg-elevated'
+                      : isSelectedFolder
+                        ? 'border-transparent bg-elevated'
+                        : 'border-transparent hover:bg-elevated'
                   }`}
                 >
                   {file.type === 'folder' ? (
