@@ -2,7 +2,7 @@ import type { Server as HttpServer } from 'http';
 import { Types } from 'mongoose';
 import { Server } from 'socket.io';
 import { env } from '../config/env';
-import { Room, memberRole, migrateFiles, needsPassword, refId } from '../models/Room';
+import { Room, memberRole, migrateFilesAtomically, needsPassword } from '../models/Room';
 import { recordActivity } from '../services/activity';
 import { fileViews, settingsView } from '../services/roomViews';
 import { socketRoomSchema } from '../validation/schemas';
@@ -30,27 +30,32 @@ async function handleJoin(io: AppServer, socket: AppSocket, rawRoomId: unknown):
   const userId = socket.data.user.userId;
   let role = memberRole(room, userId);
 
-  if (!role) {
-    if (!room.isPublic) return emitError(socket, 'ROOM_PRIVATE', 'This room is private');
-    // Public rooms auto-enrol, mirroring POST /api/rooms/:roomId/join.
-    room.members.push({
-      user: new Types.ObjectId(userId),
-      role: 'editor',
-      lastSeenAt: new Date(),
-    });
-    role = 'editor';
-  } else {
-    const member = room.members.find((m) => refId(m.user) === userId);
-    if (member) member.lastSeenAt = new Date();
-  }
+  if (!role && !room.isPublic) return emitError(socket, 'ROOM_PRIVATE', 'This room is private');
 
-  // Password gate sits after membership so an invited member is still asked.
+  // Password gate sits before enrolment so an invited member is still asked,
+  // and a stranger is never added by a failed attempt.
   if (needsPassword(room, userId)) {
     return emitError(socket, 'PASSWORD_REQUIRED', 'This room is password protected');
   }
 
-  const migrated = migrateFiles(room);
-  await room.save();
+  // Single atomic writes, never load-modify-save: two people joining at once
+  // must not race each other into a VersionError.
+  if (!role) {
+    // Public rooms auto-enrol read-only, mirroring POST /api/rooms/:roomId/join.
+    // The owner promotes people who should edit.
+    await Room.updateOne(
+      { _id: room._id, 'members.user': { $ne: new Types.ObjectId(userId) } },
+      { $push: { members: { user: new Types.ObjectId(userId), role: 'viewer', lastSeenAt: new Date() } } },
+    );
+    role = 'viewer';
+  } else {
+    await Room.updateOne(
+      { _id: room._id, 'members.user': new Types.ObjectId(userId) },
+      { $set: { 'members.$.lastSeenAt': new Date() } },
+    );
+  }
+
+  const migrated = await migrateFilesAtomically(room);
 
   await socket.join(roomId);
   socket.data.rooms.add(roomId);
@@ -85,7 +90,11 @@ async function handleJoin(io: AppServer, socket: AppSocket, rawRoomId: unknown):
   }
 }
 
-async function handleLeave(io: AppServer, socket: AppSocket, roomId: string): Promise<void> {
+/**
+ * Removes a socket from a room: presence, open file and role cache. Also used
+ * by REST controllers to evict sessions when a room is locked or deleted.
+ */
+export async function handleLeave(io: AppServer, socket: AppSocket, roomId: string): Promise<void> {
   if (!socket.data.rooms.has(roomId)) return;
 
   const userId = socket.data.user.userId;
@@ -109,6 +118,26 @@ async function handleLeave(io: AppServer, socket: AppSocket, roomId: string): Pr
   }
 }
 
+/**
+ * Every handler goes through this: a rejected promise or a throw (a Mongo
+ * hiccup, a bug) is logged and reported to that one client instead of
+ * becoming an unhandled rejection, which would take the whole process — and
+ * every unsaved in-memory document — down with it. Handlers must therefore
+ * return their promise rather than `void` it.
+ */
+function guardHandlers(socket: AppSocket): void {
+  const on = socket.on.bind(socket);
+  socket.on = ((event: string, handler: (...args: unknown[]) => unknown) =>
+    on(event as never, ((...args: unknown[]) => {
+      Promise.resolve()
+        .then(() => handler(...args))
+        .catch((err) => {
+          console.error(`[socket] ${event} failed`, err);
+          if (socket.connected) emitError(socket, 'INTERNAL', 'Something went wrong, please try again');
+        });
+    }) as never)) as typeof socket.on;
+}
+
 export function createSocketServer(httpServer: HttpServer): AppServer {
   const io: AppServer = new Server(httpServer, {
     cors: { origin: env.CLIENT_URL, credentials: true },
@@ -120,6 +149,7 @@ export function createSocketServer(httpServer: HttpServer): AppServer {
   });
 
   io.on('connection', (socket) => {
+    guardHandlers(socket);
     registerEditorHandlers(io, socket);
     registerFileHandlers(io, socket);
     registerChatHandlers(io, socket);
@@ -130,14 +160,12 @@ export function createSocketServer(httpServer: HttpServer): AppServer {
       if (typeof payload?.sentAt === 'number') socket.emit('session:pong', payload);
     });
 
-    socket.on('room:join', (payload) => {
-      void handleJoin(io, socket, payload?.roomId);
-    });
+    socket.on('room:join', (payload) => handleJoin(io, socket, payload?.roomId));
 
     socket.on('room:leave', (payload) => {
       const parsed = socketRoomSchema.safeParse(payload);
       if (!parsed.success) return;
-      void handleLeave(io, socket, parsed.data.roomId);
+      return handleLeave(io, socket, parsed.data.roomId);
     });
 
     // Tabs close without sending room:leave — disconnect is the real cleanup.
@@ -145,7 +173,7 @@ export function createSocketServer(httpServer: HttpServer): AppServer {
       const rooms = [...socket.data.rooms];
       socket.data.rooms.clear();
       socket.data.roles.clear();
-      void Promise.all(
+      return Promise.all(
         rooms.map(async (roomId) => {
           const userId = socket.data.user.userId;
           removePresence(roomId, socket.id);

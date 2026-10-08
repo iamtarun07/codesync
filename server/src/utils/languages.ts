@@ -65,3 +65,29 @@ export function languageForFileName(name: string): SupportedLanguage {
 export function extensionForLanguage(language: string): string {
   return LANGUAGE_EXTENSION[language as SupportedLanguage] ?? 'txt';
 }
+
+/**
+ * The file name a file should have once its language is switched: the
+ * extension follows the language so name and language never disagree. A name
+ * whose extension already maps to that language (`.jsx`, `.h`) is kept.
+ */
+export function nameForLanguage(name: string, language: string): string {
+  if (languageForFileName(name) === language) return name;
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  return `${base}.${extensionForLanguage(language)}`;
+}
+
+const STARTERS: Partial<Record<SupportedLanguage, string>> = {
+  javascript: "console.log('Hello, CodeSync!');\n",
+  typescript: "const greeting: string = 'Hello, CodeSync!';\nconsole.log(greeting);\n",
+  python: "print('Hello, CodeSync!')\n",
+  java: 'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, CodeSync!");\n  }\n}\n',
+  c: '#include <stdio.h>\n\nint main(void) {\n  printf("Hello, CodeSync!\\n");\n  return 0;\n}\n',
+  cpp: '#include <iostream>\n\nint main() {\n  std::cout << "Hello, CodeSync!" << std::endl;\n  return 0;\n}\n',
+};
+
+/** Hello-world body for a new room's first file, so Run works immediately. */
+export function starterSource(language: string): string {
+  return STARTERS[language as SupportedLanguage] ?? '';
+}

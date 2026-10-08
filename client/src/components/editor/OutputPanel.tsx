@@ -21,7 +21,21 @@ export function OutputPanel({
   onToggle,
 }: OutputPanelProps) {
   const [showStdin, setShowStdin] = useState(false);
-  const failed = run.status === 'failed' || (run.output?.exitCode ?? 0) !== 0;
+  // A null exit code means it never finished (compile error, timeout): failed.
+  const failed = run.status === 'failed' || (run.output !== null && run.output.exitCode !== 0);
+  const metrics = run.output
+    ? [
+        run.output.runtime,
+        run.output.status,
+        `exit ${run.output.exitCode ?? '—'}`,
+        run.output.cpuTimeMs !== null ? `cpu ${run.output.cpuTimeMs}ms` : null,
+        run.output.memoryKb !== null ? `${Math.round(run.output.memoryKb / 1024)}MB` : null,
+        `${run.output.durationMs}ms`,
+        run.output.by,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
   const hasOutput = Boolean(run.output?.stdout || run.output?.stderr);
 
   return (
@@ -53,7 +67,7 @@ export function OutputPanel({
             : run.status === 'failed'
               ? 'run failed'
               : run.output
-                ? `${run.output.runtime} · exit ${run.output.exitCode ?? '—'} · ${run.output.durationMs}ms · ${run.output.by}`
+                ? metrics
                 : 'idle'}
         </span>
 
@@ -78,7 +92,9 @@ export function OutputPanel({
         <div className="flex max-h-56 min-h-28 gap-2 border-t border-line px-3 py-2.5">
           <div className="min-h-24 flex-1 overflow-auto font-mono text-[12px] leading-[20px]">
             {run.status === 'idle' ? (
-              <p className="text-ink-disabled">press run to execute the room buffer</p>
+              <p className="text-ink-disabled">
+                press run to execute the active file · programs that read input need stdin
+              </p>
             ) : null}
             {run.status === 'running' ? <p className="text-ink-muted">executing…</p> : null}
             {run.status === 'failed' ? (

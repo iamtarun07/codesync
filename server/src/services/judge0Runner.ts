@@ -1,4 +1,5 @@
 import { env } from '../config/env';
+import { adaptJavaEntry } from './javaEntry';
 import { MAX_SOURCE_LENGTH, RunError, type RunResult } from './runnerTypes';
 
 /**
@@ -167,7 +168,9 @@ export async function runOnJudge0(
     method: 'POST',
     body: JSON.stringify({
       language_id: runtime.id,
-      source_code: Buffer.from(source, 'utf8').toString('base64'),
+      source_code: Buffer.from(language === 'java' ? adaptJavaEntry(source) : source, 'utf8').toString(
+        'base64',
+      ),
       stdin: Buffer.from(stdin ?? '', 'utf8').toString('base64'),
     }),
   });

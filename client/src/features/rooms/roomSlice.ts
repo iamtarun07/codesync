@@ -57,10 +57,6 @@ const initialState: RoomState = {
   run: { status: 'idle', by: null, output: null, error: null },
 };
 
-function firstFileId(files: RoomFile[]): string | null {
-  return files.find((file) => file.type === 'file')?.fileId ?? null;
-}
-
 export const openRoom = createAsyncThunk(
   'room/open',
   async (roomId: string, { rejectWithValue }) => {
@@ -165,15 +161,18 @@ const roomSlice = createSlice({
       state.files = action.payload.files;
       state.settings = action.payload.settings;
       if (state.room) state.room.name = action.payload.name;
-      if (!state.activeFileId || !action.payload.files.some((f) => f.fileId === state.activeFileId)) {
-        state.activeFileId = firstFileId(action.payload.files);
-      }
+      const active = action.payload.files.find((f) => f.fileId === state.activeFileId);
+      const next = active ?? action.payload.files.find((f) => f.type === 'file');
+      state.activeFileId = next?.fileId ?? null;
+      if (next) state.language = next.language;
     },
     setFiles(state, action: PayloadAction<RoomFile[]>) {
       state.files = action.payload;
-      const active = action.payload.find((file) => file.fileId === state.activeFileId);
-      if (!active) state.activeFileId = firstFileId(action.payload);
-      else state.language = active.language;
+      const active =
+        action.payload.find((file) => file.fileId === state.activeFileId) ??
+        action.payload.find((file) => file.type === 'file');
+      state.activeFileId = active?.fileId ?? null;
+      if (active) state.language = active.language;
     },
     setActiveFile(state, action: PayloadAction<string>) {
       const file = state.files.find((f) => f.fileId === action.payload && f.type === 'file');

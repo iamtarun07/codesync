@@ -32,7 +32,11 @@ services:
       # Vercel deployment exists, then restart the service.
       - key: CLIENT_URL
         sync: false
-      # Arbitrary local execution is refused in production anyway; keep the Run
-      # button explicitly off until an isolated Piston sandbox is configured.
+      # Programs run on a Judge0 sandbox, never on this host. The public CE
+      # instance needs no key but is shared and rate limited; for real traffic
+      # point JUDGE0_URL at a self-hosted Judge0 or set the RapidAPI pair
+      # (JUDGE0_RAPIDAPI_KEY + JUDGE0_RAPIDAPI_HOST) in the dashboard.
       - key: RUNNER
-        value: disabled
+        value: judge0
+      - key: JUDGE0_URL
+        value: https://ce.judge0.com

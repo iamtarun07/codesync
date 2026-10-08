@@ -92,6 +92,6 @@ export const isProduction = env.NODE_ENV === 'production';
 if (isProduction && env.RUNNER === 'local') {
   console.warn(
     '[env] RUNNER=local is refused in production — code execution is disabled. ' +
-      'Set RUNNER=piston with a sandboxed PISTON_URL to enable it.',
+      'Set RUNNER=judge0 (sandboxed, see JUDGE0_URL) to enable it.',
   );
 }

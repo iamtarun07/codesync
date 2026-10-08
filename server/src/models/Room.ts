@@ -184,3 +184,16 @@ export function migrateFiles(room: IRoom): boolean {
   });
   return true;
 }
+
+/**
+ * migrateFiles + persist, as one conditional write: it only lands while the
+ * room still has no files, so two concurrent first-opens cannot both migrate.
+ */
+export async function migrateFilesAtomically(room: IRoom): Promise<boolean> {
+  if (!migrateFiles(room)) return false;
+  await Room.updateOne(
+    { _id: room._id, 'files.0': { $exists: false } },
+    { $set: { files: room.files.map((file) => file.toObject()) } },
+  );
+  return true;
+}

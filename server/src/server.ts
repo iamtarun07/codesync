@@ -30,6 +30,19 @@ async function bootstrap() {
     process.exit(0);
   };
 
+  // Last line of defence — socket handlers are already guarded individually.
+  // A stray rejection is logged rather than allowed to kill the process (and
+  // every in-memory document with it).
+  process.on('unhandledRejection', (reason) => {
+    console.error('[server] unhandled rejection', reason);
+  });
+  // After an uncaught exception the process state is undefined: save what can
+  // be saved, then exit so the platform restarts a clean instance.
+  process.on('uncaughtException', (err) => {
+    console.error('[server] uncaught exception', err);
+    void flushAllDocs().finally(() => process.exit(1));
+  });
+
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }

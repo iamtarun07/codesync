@@ -7,6 +7,7 @@ import { messageReceived } from '../chat/chatSlice';
 import { setMembers } from '../presence/presenceSlice';
 import {
   activityAdded,
+  openRoom,
   roomStateReceived,
   runFailed,
   runFinished,
@@ -91,6 +92,8 @@ export function useCollabSession(
   roomId: string,
   user: User | null,
   fileId: string | null,
+  /** False until REST confirmed access (password cleared, room exists). */
+  enabled: boolean,
 ): CollabSession {
   const dispatch = useAppDispatch();
   const myRole = useAppSelector((state) => state.room.myRole);
@@ -117,7 +120,9 @@ export function useCollabSession(
 
   // ---- 1. room session ----------------------------------------------------
   useEffect(() => {
-    if (!user || !roomId) return;
+    // Joining before the REST gate cleared would be refused (PASSWORD_REQUIRED)
+    // and never retried, leaving the editor stuck after an unlock.
+    if (!user || !roomId || !enabled) return;
 
     const socket = connectSocket();
     dispatch(setConnection(socket.connected ? 'connected' : 'connecting'));
@@ -191,6 +196,12 @@ export function useCollabSession(
     };
 
     const handleError = (payload: { code: string; message: string }) => {
+      // Access was revoked mid-session (password set, room deleted): re-open
+      // through REST, which lands on the password gate or the not-found page.
+      if (payload.code === 'PASSWORD_REQUIRED' || payload.code === 'ROOM_NOT_FOUND') {
+        void dispatch(openRoom(roomId));
+        return;
+      }
       dispatch(setSocketError(payload.message));
     };
 
@@ -269,7 +280,7 @@ export function useCollabSession(
       setJoinToken(0);
       setMetrics({ rev: 0, latencyMs: null, connectedSince: null });
     };
-  }, [roomId, user, dispatch]);
+  }, [roomId, user, enabled, dispatch]);
 
   // ---- 2. per-file CRDT document ------------------------------------------
   useEffect(() => {

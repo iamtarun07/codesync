@@ -70,10 +70,13 @@ export function DashboardPage() {
     }
   };
 
-  const handleDelete = (roomId: string) => {
+  const handleDelete = async (roomId: string) => {
     if (!window.confirm('Delete this room and its chat history? This cannot be undone.')) return;
-    void dispatch(deleteRoom(roomId));
-    dispatch(showToast({ title: 'Room deleted', detail: roomId }));
+    const result = await dispatch(deleteRoom(roomId));
+    // Failure is shown by the mutation error alert; only success gets a toast.
+    if (deleteRoom.fulfilled.match(result)) {
+      dispatch(showToast({ title: 'Room deleted', detail: roomId }));
+    }
   };
 
   return (
@@ -219,7 +222,7 @@ export function DashboardPage() {
           ) : null}
 
           {status === 'ready' && items.length > 0 ? (
-            <RoomTable rooms={items} currentUserId={user?.id} onDelete={handleDelete} />
+            <RoomTable rooms={items} currentUserId={user?.id} onDelete={(id) => void handleDelete(id)} />
           ) : null}
         </div>
       </div>

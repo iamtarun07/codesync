@@ -1,6 +1,8 @@
 import { Room, findFile } from '../models/Room';
 import { recordActivity } from '../services/activity';
 import { fileViews } from '../services/roomViews';
+import { renamePath } from '../utils/filePath';
+import { nameForLanguage } from '../utils/languages';
 import { socketFileSchema, socketLanguageSchema } from '../validation/schemas';
 import type { AppServer, AppSocket } from '../types/socket.types';
 import { applyRemoteUpdate, flushDoc } from './docStore';
@@ -84,11 +86,35 @@ export function registerEditorHandlers(io: AppServer, socket: AppSocket): void {
       return emitError(socket, 'FILE_NOT_FOUND', 'That file no longer exists');
     }
 
-    file.language = language;
-    file.updatedAt = new Date();
-    // Room-level language stays as the dashboard/runner default.
-    room.language = language;
-    await room.save();
+    // The extension follows the language (main.py -> main.java), so the file
+    // tree, a later rename and the runner can never disagree about it.
+    const name = nameForLanguage(file.name, language);
+    const path = renamePath(file.path, name);
+    if (path !== file.path && room.files.some((f) => f.path === path)) {
+      return emitError(socket, 'PATH_TAKEN', `${path} already exists — rename it first`);
+    }
+
+    // Single conditional write: the file must still be at the path we read,
+    // and the new path must still be free.
+    const result = await Room.updateOne(
+      {
+        _id: room._id,
+        files: { $elemMatch: { fileId, path: file.path } },
+        ...(path !== file.path ? { 'files.path': { $ne: path } } : {}),
+      },
+      {
+        $set: {
+          'files.$[target].language': language,
+          'files.$[target].name': name,
+          'files.$[target].path': path,
+          'files.$[target].updatedAt': new Date(),
+        },
+      },
+      { arrayFilters: [{ 'target.fileId': fileId }] },
+    );
+    if (result.matchedCount === 0) {
+      return emitError(socket, 'FILE_CHANGED', 'That file changed meanwhile — try again');
+    }
 
     io.to(roomId).emit('room:language', {
       roomId,
@@ -96,14 +122,15 @@ export function registerEditorHandlers(io: AppServer, socket: AppSocket): void {
       language,
       by: socket.data.user.username,
     });
-    io.to(roomId).emit('room:files', { roomId, files: fileViews(room) });
+    const updated = await Room.findOne({ roomId });
+    if (updated) io.to(roomId).emit('room:files', { roomId, files: fileViews(updated) });
 
     await recordActivity({
       roomObjectId: room._id,
       roomId,
       actor: { id: socket.data.user.userId, username: socket.data.user.username },
       type: 'LANGUAGE_CHANGED',
-      metadata: { language, path: file.path },
+      metadata: { language, path },
     });
   });
 

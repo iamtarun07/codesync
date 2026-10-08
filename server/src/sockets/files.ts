@@ -1,4 +1,4 @@
-import { Room, findFile, type IRoom } from '../models/Room';
+import { Room, findFile, type IRoom, type IRoomFile } from '../models/Room';
 import { recordActivity } from '../services/activity';
 import { fileViews } from '../services/roomViews';
 import {
@@ -20,6 +20,10 @@ import type { AppServer, AppSocket } from '../types/socket.types';
 import { acquireDoc, encodeState, evictDoc, releaseDoc } from './docStore';
 import { emitError, fileRoom, openFileIn, requireJoined, requireWriteAccess } from './guards';
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function broadcastFiles(io: AppServer, room: IRoom): Promise<void> {
   io.to(room.roomId).emit('room:files', { roomId: room.roomId, files: fileViews(room) });
 }
@@ -37,12 +41,13 @@ export async function closeOpenFile(socket: AppSocket, roomId: string): Promise<
   await releaseDoc(roomId, previous);
 }
 
-/** Creates any missing folder entries along a path (mkdir -p semantics). */
-function ensureFolders(room: IRoom, segments: string[]): void {
+/** Folder entries missing along a path (mkdir -p semantics). */
+function missingFolders(room: IRoom, segments: string[]): IRoomFile[] {
+  const entries: IRoomFile[] = [];
   for (let i = 1; i < segments.length; i += 1) {
     const folderPath = segments.slice(0, i).join('/');
     if (room.files.some((f) => f.path === folderPath)) continue;
-    room.files.push({
+    entries.push({
       fileId: generateFileId(),
       name: segments[i - 1],
       path: folderPath,
@@ -53,6 +58,7 @@ function ensureFolders(room: IRoom, segments: string[]): void {
       updatedAt: new Date(),
     });
   }
+  return entries;
 }
 
 export function registerFileHandlers(io: AppServer, socket: AppSocket): void {
@@ -134,11 +140,9 @@ export function registerFileHandlers(io: AppServer, socket: AppSocket): void {
       return emitError(socket, 'TOO_MANY_FILES', `A room may hold ${MAX_FILES_PER_ROOM} entries`);
     }
 
-    ensureFolders(room, normalized.segments);
-
-    const fileId = generateFileId();
-    room.files.push({
-      fileId,
+    const entries = missingFolders(room, normalized.segments);
+    entries.push({
+      fileId: generateFileId(),
       name: normalized.name,
       path: normalized.path,
       type,
@@ -147,9 +151,25 @@ export function registerFileHandlers(io: AppServer, socket: AppSocket): void {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    await room.save();
 
-    await broadcastFiles(io, room);
+    // One conditional $push: it only lands if none of the new paths appeared
+    // and the room is still under the cap since we read it. Never
+    // load-modify-save, which would race (VersionError) and rewrite the files
+    // array without the unselected per-file CRDT state.
+    const result = await Room.updateOne(
+      {
+        _id: room._id,
+        'files.path': { $nin: entries.map((entry) => entry.path) },
+        [`files.${MAX_FILES_PER_ROOM - entries.length}`]: { $exists: false },
+      },
+      { $push: { files: { $each: entries } } },
+    );
+    if (result.modifiedCount === 0) {
+      return emitError(socket, 'PATH_TAKEN', `${normalized.path} was just created or the room is full`);
+    }
+
+    const updated = await Room.findOne({ roomId });
+    if (updated) await broadcastFiles(io, updated);
     await recordActivity({
       roomObjectId: room._id,
       roomId,
@@ -188,23 +208,45 @@ export function registerFileHandlers(io: AppServer, socket: AppSocket): void {
       return emitError(socket, 'PATH_TAKEN', `${toPath} already exists`);
     }
 
-    file.name = nextName;
-    file.path = toPath;
-    file.updatedAt = new Date();
-    if (file.type === 'file') file.language = languageForFileName(nextName);
+    const now = new Date();
+    const set: Record<string, unknown> = {
+      'files.$[target].name': nextName,
+      'files.$[target].path': toPath,
+      'files.$[target].updatedAt': now,
+    };
+    if (file.type === 'file') set['files.$[target].language'] = languageForFileName(nextName);
+    const arrayFilters: Record<string, unknown>[] = [{ 'target.fileId': fileId }];
 
-    // A folder rename moves everything beneath it.
+    // A folder rename moves everything beneath it, each entry by its own id.
+    // ponytail: a child created inside the folder in the same instant is left
+    // at the old path; an aggregation-pipeline update closes that if it matters.
     if (file.type === 'folder') {
-      room.files.forEach((child) => {
-        if (isDescendantPath(child.path, fromPath)) {
-          child.path = `${toPath}/${child.path.slice(fromPath.length + 1)}`;
-          child.updatedAt = new Date();
-        }
-      });
+      room.files
+        .filter((child) => isDescendantPath(child.path, fromPath))
+        .forEach((child, i) => {
+          set[`files.$[c${i}].path`] = `${toPath}/${child.path.slice(fromPath.length + 1)}`;
+          set[`files.$[c${i}].updatedAt`] = now;
+          arrayFilters.push({ [`c${i}.fileId`]: child.fileId });
+        });
     }
 
-    await room.save();
-    await broadcastFiles(io, room);
+    // Conditional on the source still being where we read it and the target
+    // still being free, so two renames cannot collide.
+    const result = await Room.updateOne(
+      {
+        _id: room._id,
+        files: { $elemMatch: { fileId, path: fromPath } },
+        'files.path': { $ne: toPath },
+      },
+      { $set: set },
+      { arrayFilters },
+    );
+    if (result.modifiedCount === 0) {
+      return emitError(socket, 'PATH_TAKEN', `${toPath} already exists`);
+    }
+
+    const updated = await Room.findOne({ roomId });
+    if (updated) await broadcastFiles(io, updated);
     await recordActivity({
       roomObjectId: room._id,
       roomId,
@@ -238,11 +280,28 @@ export function registerFileHandlers(io: AppServer, socket: AppSocket): void {
     }
 
     const doomedIds = new Set(doomed.map((f) => f.fileId));
-    room.set(
-      'files',
-      room.files.filter((f) => !doomedIds.has(f.fileId)),
+    // $pull by path removes the entry and anything beneath it in one write,
+    // conditional on a surviving file still existing. Rewriting the whole
+    // array instead would drop every other file's unselected CRDT state.
+    const result = await Room.updateOne(
+      {
+        _id: room._id,
+        files: { $elemMatch: { type: 'file', fileId: { $nin: [...doomedIds] } } },
+      },
+      {
+        $pull: {
+          files: {
+            $or: [
+              { path: target.path },
+              { path: { $regex: `^${escapeRegex(target.path)}/` } },
+            ],
+          },
+        },
+      },
     );
-    await room.save();
+    if (result.modifiedCount === 0) {
+      return emitError(socket, 'LAST_FILE', 'A room must keep at least one file');
+    }
 
     doomedIds.forEach((id) => evictDoc(roomId, id));
 
@@ -269,7 +328,8 @@ export function registerFileHandlers(io: AppServer, socket: AppSocket): void {
       }
     }
 
-    await broadcastFiles(io, room);
+    const updated = await Room.findOne({ roomId });
+    if (updated) await broadcastFiles(io, updated);
     await recordActivity({
       roomObjectId: room._id,
       roomId,

@@ -44,7 +44,14 @@ export function RoomTable({ rooms, currentUserId, onDelete }: RoomTableProps) {
               <tr
                 key={room.roomId}
                 onClick={() => navigate(`/room/${room.roomId}`)}
-                className="group cursor-pointer border-b border-line/70 border-l-2 border-l-transparent transition-colors last:border-b-0 hover:border-l-cyan hover:bg-elevated"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && event.target === event.currentTarget) {
+                    navigate(`/room/${room.roomId}`);
+                  }
+                }}
+                tabIndex={0}
+                aria-label={`Open room ${room.name}`}
+                className="group cursor-pointer border-b border-line/70 border-l-2 border-l-transparent transition-colors last:border-b-0 hover:border-l-cyan hover:bg-elevated focus-visible:border-l-cyan focus-visible:bg-elevated focus-visible:outline-none"
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -80,9 +87,9 @@ export function RoomTable({ rooms, currentUserId, onDelete }: RoomTableProps) {
 
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5">
-                    <Dot tone={room.memberCount > 1 ? 'lime' : 'muted'} />
+                    <Dot tone={room.isPublic ? 'lime' : 'muted'} />
                     <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-muted">
-                      {room.memberCount > 1 ? 'shared' : 'private'}
+                      {room.isPublic ? 'public' : 'private'}
                     </span>
                   </span>
                 </td>

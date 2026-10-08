@@ -57,7 +57,7 @@ export function registerRunHandlers(io: AppServer, socket: AppSocket): void {
       return socket.emit('code:failed', {
         roomId,
         code: 'LANGUAGE_NOT_RUNNABLE',
-        message: `${language} is not executable — switch to JavaScript, TypeScript, Python, Java or C++`,
+        message: `${language} is not executable — switch to JavaScript, TypeScript, Python, Java, C or C++`,
       });
     }
 

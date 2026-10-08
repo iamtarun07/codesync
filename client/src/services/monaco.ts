@@ -30,6 +30,13 @@ window.MonacoEnvironment = {
   },
 };
 
+// Room code runs on Node, but the editor has no @types/node: without this,
+// valid TypeScript using require/process/Buffer is underlined as an error.
+// 2580/2591 are exactly "Cannot find name X. Do you need type definitions for node?".
+monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+  diagnosticCodesToIgnore: [2580, 2591],
+});
+
 loader.config({ monaco });
 
 export { monaco };

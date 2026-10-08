@@ -204,6 +204,12 @@ async function main() {
   const mainFile = room.files[0].fileId;
 
   await axios.post(`${API}/rooms/${roomId}/join`, {}, as(bob.token));
+  // Joining by ID is read-only; the owner promotes a collaborator to edit.
+  await axios.patch(
+    `${API}/rooms/${roomId}/members/${bob.user.id}/role`,
+    { role: 'editor' },
+    as(alice.token),
+  );
 
   const a = makeClient(alice.token, roomId, 'alice');
   const b = makeClient(bob.token, roomId, 'bob');
@@ -225,7 +231,12 @@ async function main() {
   // --- TEST 1: collaborative editing -------------------------------------
   a.ydoc.getText('monaco').insert(0, 'const answer = 42;\n');
   await wait(500);
-  check('B sees A typing', b.text() === 'const answer = 42;\n', JSON.stringify(b.text()));
+  // The room starts with hello-world starter code, so compare peers, not a literal.
+  check(
+    'B sees A typing',
+    b.text() === a.text() && b.text().startsWith('const answer = 42;\n'),
+    JSON.stringify(b.text()),
+  );
 
   // Simultaneous edits at different offsets — CRDT must converge, not clobber.
   a.ydoc.getText('monaco').insert(0, '// alice\n');
@@ -424,8 +435,8 @@ async function main() {
   const carolJoin = await axios.post(`${API}/rooms/${roomId}/join`, {}, as(carol.token));
   check('a new user can join through the invite link target', carolJoin.status === 200);
   check(
-    'invited user defaults to editor',
-    carolJoin.data.data.room.myRole === 'editor',
+    'invited user defaults to read-only viewer',
+    carolJoin.data.data.room.myRole === 'viewer',
     String(carolJoin.data.data.room.myRole),
   );
 

@@ -31,7 +31,6 @@ import {
   saveRoomSettings,
   setActiveFile,
   setActivityGroup,
-  setLanguage,
   setSocketError,
   unlockRoom,
 } from '../features/rooms/roomSlice';
@@ -90,6 +89,7 @@ export function RoomPage() {
     roomId,
     user,
     activeFileId,
+    status === 'ready',
   );
 
   const activeFile = files.find((file) => file.fileId === activeFileId) ?? null;
@@ -149,10 +149,11 @@ export function RoomPage() {
   const handleLanguage = useCallback(
     (next: string) => {
       if (!activeFileId) return;
-      dispatch(setLanguage(next));
+      // Not optimistic: the select shows the server's language until it
+      // confirms, so the label can never claim a language Run will not use.
       getSocket().emit('room:language', { roomId, fileId: activeFileId, language: next });
     },
-    [dispatch, roomId, activeFileId],
+    [roomId, activeFileId],
   );
 
   const handleSave = useCallback(() => {

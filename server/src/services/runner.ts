@@ -9,7 +9,8 @@ export { MAX_SOURCE_LENGTH, RunError, type RunResult } from './runnerTypes';
 /**
  * `judge0` sends the program to a Judge0 sandbox (public CE instance, a
  * self-hosted one, or RapidAPI) — nothing untrusted runs on this server, so it
- * is the production default.
+ * is what production should use (render.yaml sets it). The env default stays
+ * `local` for development machines.
  * `piston` is the equivalent for a self-hosted Piston sandbox.
  * `local` spawns a child process on this host — correct for a development
  * machine, unacceptable on a public server, so it is refused in production.

@@ -5,7 +5,7 @@ import {
   Room,
   isMember,
   memberRole,
-  migrateFiles,
+  migrateFilesAtomically,
   needsPassword,
   ownerId,
   refId,
@@ -18,9 +18,10 @@ import { recordActivity } from '../services/activity';
 import { activityView, fileViews, settingsView } from '../services/roomViews';
 import { ApiError } from '../utils/ApiError';
 import { generateFileId, generateRoomId } from '../utils/roomId';
-import { extensionForLanguage } from '../utils/languages';
+import { extensionForLanguage, starterSource } from '../utils/languages';
 import { currentUser } from '../middleware/auth.middleware';
 import { evictRoomDocs } from '../sockets/docStore';
+import { handleLeave } from '../sockets';
 import { getIO } from '../sockets/io';
 import { broadcastMembers } from '../sockets/presence';
 import type {
@@ -94,12 +95,33 @@ function assertOwner(room: IRoom, userId: string): void {
   }
 }
 
+/**
+ * Pulls live sessions out of a room after a REST change revoked their access
+ * (password turned on, room deleted). The client reacts to the error code by
+ * re-opening the room, which lands on the password gate or the not-found page.
+ */
+async function evictSessions(
+  room: IRoom,
+  code: 'PASSWORD_REQUIRED' | 'ROOM_NOT_FOUND',
+  message: string,
+  keep: (userId: string) => boolean = () => false,
+): Promise<void> {
+  const io = getIO();
+  if (!io) return;
+  for (const remote of await io.in(room.roomId).fetchSockets()) {
+    const socket = io.sockets.sockets.get(remote.id);
+    if (!socket || keep(socket.data.user.userId)) continue;
+    await handleLeave(io, socket, room.roomId);
+    socket.emit('error', { code, message });
+  }
+}
+
 function refreshRoom(room: IRoom): void {
   const io = getIO();
   if (!io) return;
   io.to(room.roomId).emit('room:files', { roomId: room.roomId, files: fileViews(room) });
   io.to(room.roomId).emit('room:settings', { roomId: room.roomId, settings: settingsView(room) });
-  void broadcastMembers(io, room.roomId);
+  broadcastMembers(io, room.roomId).catch((err) => console.error('[rooms] member broadcast failed', err));
 }
 
 export async function createRoom(req: Request, res: Response) {
@@ -129,7 +151,7 @@ export async function createRoom(req: Request, res: Response) {
           path: fileName,
           type: 'file',
           language,
-          content: '',
+          content: starterSource(language),
         },
       ],
     });
@@ -182,7 +204,7 @@ export async function getRoom(req: Request, res: Response) {
   }
 
   // Legacy rooms become workspaces the first time they are opened.
-  if (migrateFiles(room)) await room.save();
+  await migrateFilesAtomically(room);
 
   res.json({ success: true, data: { room: toRoomDTO(room, userId) } });
 }
@@ -198,18 +220,23 @@ export async function joinRoom(req: Request, res: Response) {
   const alreadyMember = isMember(room, userId);
   if (!alreadyMember) {
     if (!room.isPublic) throw ApiError.forbidden('This room is private', 'ROOM_PRIVATE');
-    room.members.push({ user: user._id, role: 'editor', lastSeenAt: new Date() });
   }
 
+  // Checked before enrolment: a stranger only becomes a member by clearing the
+  // password (see unlockRoom), so membership alone never unlocks room data.
   if (needsPassword(room, userId)) {
-    // The membership row is saved so the password prompt has something to
-    // unlock, but no room contents are returned until it is cleared.
-    if (!alreadyMember) await room.save();
     throw ApiError.forbidden('This room is password protected', 'PASSWORD_REQUIRED');
   }
 
-  migrateFiles(room);
-  await room.save();
+  if (!alreadyMember) {
+    // Joining by ID is read-only; the owner promotes people who should edit.
+    await Room.updateOne(
+      { _id: room._id, 'members.user': { $ne: user._id } },
+      { $push: { members: { user: user._id, role: 'viewer', lastSeenAt: new Date() } } },
+    );
+    room.members.push({ user: user._id, role: 'viewer', lastSeenAt: new Date() });
+  }
+  await migrateFilesAtomically(room);
 
   await room.populate([
     { path: 'owner', select: 'username' },
@@ -244,12 +271,12 @@ export async function unlockRoom(req: Request, res: Response) {
 
   let member = room.members.find((m) => refId(m.user) === userId);
   if (!member) {
-    room.members.push({ user: user._id, role: 'editor', lastSeenAt: new Date() });
+    room.members.push({ user: user._id, role: 'viewer', lastSeenAt: new Date() });
     member = room.members[room.members.length - 1];
   }
   member.passwordOkAt = new Date();
-  migrateFiles(room);
   await room.save();
+  await migrateFilesAtomically(room);
 
   await room.populate([
     { path: 'owner', select: 'username' },
@@ -300,6 +327,10 @@ export async function updateSettings(req: Request, res: Response) {
     { path: 'members.user', select: 'username' },
   ]);
   refreshRoom(room);
+  if (activities.some((activity) => activity.type === 'PASSWORD_ENABLED')) {
+    // Everyone but the owner has to clear the new password before continuing.
+    await evictSessions(room, 'PASSWORD_REQUIRED', 'The owner changed the room password', (id) => id === userId);
+  }
 
   for (const activity of activities) {
     await recordActivity({
@@ -375,8 +406,12 @@ export async function listActivity(req: Request, res: Response) {
 
   const room = await Room.findOne({ roomId }).select('_id isPublic members owner passwordEnabled');
   if (!room) throw ApiError.notFound('Room not found', 'ROOM_NOT_FOUND');
-  if (!isMember(room, user._id.toString())) {
+  const viewerId = user._id.toString();
+  if (!isMember(room, viewerId)) {
     throw ApiError.forbidden('Join the room to see its activity', 'NOT_A_MEMBER');
+  }
+  if (needsPassword(room, viewerId)) {
+    throw ApiError.forbidden('This room is password protected', 'PASSWORD_REQUIRED');
   }
 
   const filter: Record<string, unknown> = { room: room._id };
@@ -408,6 +443,7 @@ export async function deleteRoom(req: Request, res: Response) {
   await Message.deleteMany({ room: room._id });
   await ActivityLog.deleteMany({ room: room._id });
   await room.deleteOne();
+  await evictSessions(room, 'ROOM_NOT_FOUND', 'This room was deleted by its owner');
   evictRoomDocs(roomId);
 
   res.json({ success: true, data: { deleted: true } });
@@ -420,8 +456,13 @@ export async function listMessages(req: Request, res: Response) {
 
   const room = await Room.findOne({ roomId });
   if (!room) throw ApiError.notFound('Room not found', 'ROOM_NOT_FOUND');
-  if (!isMember(room, user._id.toString()) && !room.isPublic) {
+  const viewerId = user._id.toString();
+  if (!isMember(room, viewerId) && !room.isPublic) {
     throw ApiError.forbidden('This room is private', 'ROOM_PRIVATE');
+  }
+  // Chat is room content: a locked room keeps it behind the password too.
+  if (needsPassword(room, viewerId)) {
+    throw ApiError.forbidden('This room is password protected', 'PASSWORD_REQUIRED');
   }
 
   const filter: Record<string, unknown> = { room: room._id };

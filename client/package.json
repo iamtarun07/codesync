@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "check:collab": "node scripts/collab-check.mjs",
-    "check:run": "node scripts/run-check.mjs"
+    "check:run": "node scripts/run-check.mjs",
+    "check:files": "node scripts/files-check.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
@@ -19,7 +20,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-redux": "^9.2.0",
-    "react-router-dom": "^6.28.1",
+    "react-router-dom": "^7.18.4",
     "socket.io-client": "^4.8.1",
     "y-monaco": "^0.1.6",
     "y-protocols": "^1.0.6",

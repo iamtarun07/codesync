@@ -6,12 +6,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 
   server: {
-    host: '0.0.0.0',
     port: 5173,
-
-    allowedHosts: [
-      'brownnose-reclusive-subway.ngrok-free.dev',
-    ],
   },
 
   build: {

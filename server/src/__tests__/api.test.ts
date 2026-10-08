@@ -8,47 +8,18 @@
  * points at a deployed cluster. The database name is always `codesync_test`,
  * never `codesync`.
  */
-import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../app';
-import { env } from '../config/env';
+import { connectTestDb, disconnectTestDb } from './testDb';
 
 const app = createApp();
-
-const TEST_DB_NAME = 'codesync_test';
-const LOCAL_HOST_PATTERN = /(localhost|127\.0\.0\.1|\[::1\])/i;
-
-function resolveTestUri(): string {
-  const explicit = env.TEST_MONGODB_URI;
-  if (explicit) return explicit;
-
-  if (!LOCAL_HOST_PATTERN.test(env.MONGODB_URI)) {
-    throw new Error(
-      `Refusing to run destructive tests: MONGODB_URI is not a local instance and ` +
-        `TEST_MONGODB_URI is not set. This suite drops the "${TEST_DB_NAME}" database — ` +
-        `set TEST_MONGODB_URI to a throwaway instance first.`,
-    );
-  }
-  return env.MONGODB_URI;
-}
 
 const userA = { username: 'alice', email: 'alice@example.com', password: 'Password123' };
 const userB = { username: 'bob', email: 'bob@example.com', password: 'Password123' };
 
-beforeAll(async () => {
-  await mongoose.connect(resolveTestUri(), { dbName: TEST_DB_NAME });
-  // Guard against a misconfigured dbName ever pointing the drop at real data.
-  if (mongoose.connection.name !== TEST_DB_NAME) {
-    throw new Error(`Expected to be connected to ${TEST_DB_NAME}, got ${mongoose.connection.name}`);
-  }
-  await mongoose.connection.dropDatabase();
-});
-
-afterAll(async () => {
-  await mongoose.connection.dropDatabase();
-  await mongoose.disconnect();
-});
+beforeAll(connectTestDb);
+afterAll(disconnectTestDb);
 
 describe('auth', () => {
   it('registers a user and never returns the password', async () => {
@@ -247,9 +218,9 @@ describe('workspace, roles and access', () => {
     expect(JSON.stringify(res.body)).not.toContain('passwordHash');
   });
 
-  it('gives a joining member the editor role', async () => {
+  it('gives a member who joined by ID the read-only viewer role', async () => {
     const res = await member.get(`/api/rooms/${roomId}`);
-    expect(res.body.data.room.myRole).toBe('editor');
+    expect(res.body.data.room.myRole).toBe('viewer');
   });
 
   it('lets only the owner change roles', async () => {
@@ -261,11 +232,11 @@ describe('workspace, roles and access', () => {
 
     const allowed = await owner
       .patch(`/api/rooms/${roomId}/members/${memberId}/role`)
-      .send({ role: 'viewer' });
+      .send({ role: 'editor' });
     expect(allowed.status).toBe(200);
 
     const after = await member.get(`/api/rooms/${roomId}`);
-    expect(after.body.data.room.myRole).toBe('viewer');
+    expect(after.body.data.room.myRole).toBe('editor');
   });
 
   it('refuses to reassign or remove ownership', async () => {
@@ -302,6 +273,19 @@ describe('workspace, roles and access', () => {
     const locked = await member.get(`/api/rooms/${roomId}`);
     expect(locked.status).toBe(403);
     expect(locked.body.code).toBe('PASSWORD_REQUIRED');
+
+    // Chat and activity are room content too: locked behind the same password.
+    expect((await member.get(`/api/rooms/${roomId}/messages`)).body.code).toBe('PASSWORD_REQUIRED');
+    expect((await member.get(`/api/rooms/${roomId}/activity`)).body.code).toBe('PASSWORD_REQUIRED');
+
+    // A stranger knocking with the ID is not enrolled by the failed attempt.
+    const stranger = request.agent(app);
+    await stranger
+      .post('/api/auth/register')
+      .send({ username: 'dave', email: 'dave@example.com', password: 'Password123' });
+    expect((await stranger.post(`/api/rooms/${roomId}/join`)).body.code).toBe('PASSWORD_REQUIRED');
+    expect((await stranger.get(`/api/rooms/${roomId}/messages`)).body.code).toBe('PASSWORD_REQUIRED');
+    expect((await stranger.get(`/api/rooms/${roomId}/activity`)).status).toBe(403);
 
     // The owner is never locked out of their own room.
     expect((await owner.get(`/api/rooms/${roomId}`)).status).toBe(200);
